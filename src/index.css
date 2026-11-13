@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: #080B12;
+    color: #E2E8F0;
+    overflow-x: hidden;
+    letter-spacing: -0.01em;
+  }
+
+  h1, h2, h3, h4, .font-heading {
+    font-family: 'Space Grotesk', sans-serif;
+    letter-spacing: -0.02em;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Subtle Cyber Mesh Background Effect */
+.cyber-grid {
+  background-image: 
+    linear-gradient(to right, rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Glassmorphism & Cyber Glow utilities */
+.glass-panel {
+  background-color: rgba(21, 30, 45, 0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 229, 255, 0.12);
+}
+
+.glass-panel-hover {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-panel-hover:hover {
+  background-color: rgba(21, 30, 45, 0.9);
+  border-color: rgba(0, 229, 255, 0.3);
+  box-shadow: 0 0 20px -5px rgba(0, 229, 255, 0.15);
+}
+
+.cyan-glow {
+  box-shadow: 0 0 15px -3px rgba(0, 229, 255, 0.35);
+}
+
+.cyan-glow-text {
+  text-shadow: 0 0 12px rgba(0, 229, 255, 0.5);
+}
+
+/* Custom Minimalist Cyber Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #080B12;
+}
+::-webkit-scrollbar-thumb {
+  background: #1a2536;
+  border-radius: 9999px;
+  border: 1px solid #0e1724;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #00E5FF;
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+}

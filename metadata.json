@@ -1,0 +1,6 @@
+{
+  "name": "STATGUARD – Statistical Cyber Attack Detection System",
+  "description": "Statistical cyberattack and network anomaly detection platform utilizing Z-Score, IQR, Moving Average, Entropy, and Isolation Forest algorithms.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
