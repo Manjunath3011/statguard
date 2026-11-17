@@ -190,17 +190,25 @@ export const ReportsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                {Object.entries(summary.featureBaselines).map(([feat, b]) => (
-                  <tr key={feat}>
-                    <td className="py-2.5 px-3 font-semibold text-white">{feat}</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">{b.mean > 1000 ? Math.round(b.mean).toLocaleString() : b.mean.toFixed(2)}</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">{b.stdDev > 1000 ? Math.round(b.stdDev).toLocaleString() : b.stdDev.toFixed(2)}</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">{b.q1 > 1000 ? Math.round(b.q1).toLocaleString() : b.q1.toFixed(1)}</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">{b.median > 1000 ? Math.round(b.median).toLocaleString() : b.median.toFixed(1)}</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">{b.q3 > 1000 ? Math.round(b.q3).toLocaleString() : b.q3.toFixed(1)}</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums text-rose-400 font-bold">{b.upperBound > 1000 ? Math.round(b.upperBound).toLocaleString() : b.upperBound.toFixed(1)}</td>
+                {Object.keys(summary.featureBaselines).length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-slate-400 font-light">
+                      No baseline feature bounds loaded from the backend yet.
+                    </td>
                   </tr>
-                ))}
+                ) : (
+                  Object.entries(summary.featureBaselines).map(([feat, b]) => (
+                    <tr key={feat}>
+                      <td className="py-2.5 px-3 font-semibold text-white">{feat}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums">{b.mean > 1000 ? Math.round(b.mean).toLocaleString() : b.mean.toFixed(2)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums">{b.stdDev > 1000 ? Math.round(b.stdDev).toLocaleString() : b.stdDev.toFixed(2)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums">{b.q1 > 1000 ? Math.round(b.q1).toLocaleString() : b.q1.toFixed(1)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums">{b.median > 1000 ? Math.round(b.median).toLocaleString() : b.median.toFixed(1)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums">{b.q3 > 1000 ? Math.round(b.q3).toLocaleString() : b.q3.toFixed(1)}</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums text-rose-400 font-bold">{b.upperBound > 1000 ? Math.round(b.upperBound).toLocaleString() : b.upperBound.toFixed(1)}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

@@ -74,11 +74,15 @@ export interface PreprocessingStats {
 }
 
 export interface DatasetAnalysisSummary {
+  datasetId?: string;
   datasetName: string;
   analyzedAt: string;
   totalRecords: number;
+  totalPackets?: number;
   normalRecords: number;
   anomalousRecords: number;
+  normalPercentage?: number;
+  suspiciousPercentage?: number;
   anomalyRate: number; // percentage
   criticalCount: number;
   highCount: number;
@@ -90,6 +94,19 @@ export interface DatasetAnalysisSummary {
   records: NetworkPacketRecord[];
   anomalies: AnomalyDetectionResult[];
   preprocessing: PreprocessingStats;
+  timeSeries?: Array<{
+    time: string;
+    packetCount: number;
+    bytesKB: number;
+    isAnomaly: number | null;
+  }>;
+  methodCounts?: {
+    zScore: number;
+    iqr: number;
+    movingAvg: number;
+    isolationForest: number;
+    entropyValue: number | null;
+  };
   featureBaselines: Record<string, {
     mean: number;
     stdDev: number;

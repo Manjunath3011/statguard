@@ -6,9 +6,9 @@ import {
   TrendingUp,
   Brain,
   Hash,
-  Info,
-  ChevronDown,
-  ChevronUp
+  Play,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import {
   LineChart,
@@ -28,21 +28,36 @@ import {
   calculateShannonEntropy
 } from '../../utils/statistics';
 
-export const StatisticalAnalysisPage: React.FC = () => {
-  const { summary, settings, updateSettings } = useApp();
-  const [activeTechnique, setActiveTechnique] = useState<'zscore' | 'iqr' | 'ma' | 'stddev' | 'iforest' | 'entropy'>('zscore');
-  const [expandedExplanation, setExpandedExplanation] = useState<boolean>(true);
+const EMPTY_FEATURE_BASELINE = {
+  mean: 0,
+  stdDev: 0,
+  variance: 0,
+  median: 0,
+  iqr: 0,
+  q1: 0,
+  q3: 0,
+  lowerBound: 0,
+  upperBound: 0,
+  min: 0,
+  max: 0
+};
 
-  // Baseline stats
-  const packetBaselines = summary.featureBaselines.packetCount || {
-    mean: 180, stdDev: 420, variance: 176400, median: 15, iqr: 18, q1: 8, q3: 26, lowerBound: 0, upperBound: 53, min: 2, max: 5500
-  };
-  const bytesBaselines = summary.featureBaselines.totalBytes || {
-    mean: 150000, stdDev: 850000, variance: 722500000000, median: 7500, iqr: 12000, q1: 3000, q3: 15000, lowerBound: 0, upperBound: 33000, min: 120, max: 70000000
-  };
-  const freqBaselines = summary.featureBaselines.connectionFrequency || {
-    mean: 45, stdDev: 180, variance: 32400, median: 12, iqr: 22, q1: 5, q3: 27, lowerBound: 0, upperBound: 60, min: 1, max: 6000
-  };
+export const StatisticalAnalysisPage: React.FC = () => {
+  const {
+    summary,
+    settings,
+    updateSettings,
+    runBackendAnalysis,
+    isAnalyzing,
+    analyzeError,
+    dataSourceMode
+  } = useApp();
+  const [activeTechnique, setActiveTechnique] = useState<'zscore' | 'iqr' | 'ma' | 'stddev' | 'iforest' | 'entropy'>('zscore');
+
+  // Baseline stats from backend/active dataset (zeroed when empty; no fake defaults)
+  const packetBaselines = summary.featureBaselines.packetCount || EMPTY_FEATURE_BASELINE;
+  const bytesBaselines = summary.featureBaselines.totalBytes || EMPTY_FEATURE_BASELINE;
+  const freqBaselines = summary.featureBaselines.connectionFrequency || EMPTY_FEATURE_BASELINE;
 
   // Z-Score Distribution data bins
   const zScoreBins = React.useMemo(() => {
@@ -109,25 +124,59 @@ export const StatisticalAnalysisPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Global Threshold Quick Tuner with Cyan Glow */}
-        <div className="flex items-center gap-3 bg-[#080B12] border border-cyan-500/30 rounded-xl p-2.5 text-xs shadow-[0_0_15px_rgba(0,229,255,0.15)]">
-          <div className="flex items-center gap-3">
-            <span className="text-slate-300 font-mono">Z-Score Cutoff:</span>
-            <input
-              type="range"
-              min="1.5"
-              max="4.0"
-              step="0.1"
-              value={settings.zScoreThreshold}
-              onChange={(e) => updateSettings({ ...settings, zScoreThreshold: parseFloat(e.target.value) })}
-              className="w-28 accent-cyan-400 cursor-pointer"
-            />
-            <span className="font-mono text-cyan-400 font-bold text-sm w-12 drop-shadow-[0_0_8px_rgba(0,229,255,0.6)]">
-              {settings.zScoreThreshold.toFixed(1)}σ
-            </span>
+        {/* Global Threshold Quick Tuner & POST /api/analyze Button */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-3 bg-[#080B12] border border-cyan-500/30 rounded-xl p-2.5 text-xs shadow-[0_0_15px_rgba(0,229,255,0.15)]">
+            <div className="flex items-center gap-3">
+              <span className="text-slate-300 font-mono">Z-Score Cutoff:</span>
+              <input
+                type="range"
+                min="1.5"
+                max="4.0"
+                step="0.1"
+                value={settings.zScoreThreshold}
+                onChange={(e) => updateSettings({ ...settings, zScoreThreshold: parseFloat(e.target.value) })}
+                className="w-28 accent-cyan-400 cursor-pointer"
+              />
+              <span className="font-mono text-cyan-400 font-bold text-sm w-12 drop-shadow-[0_0_8px_rgba(0,229,255,0.6)]">
+                {settings.zScoreThreshold.toFixed(1)}σ
+              </span>
+            </div>
           </div>
+
+          <button
+            onClick={() => void runBackendAnalysis()}
+            disabled={isAnalyzing}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-[#080B12] text-xs font-bold font-heading transition-all shadow-[0_0_15px_rgba(0,229,255,0.3)] disabled:opacity-60"
+          >
+            {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+            <span>{isAnalyzing ? 'Analyzing via FastAPI...' : 'Run Statistical Analysis'}</span>
+          </button>
         </div>
       </div>
+
+      {analyzeError && (
+        <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span className="font-mono">{analyzeError.message}</span>
+          </div>
+          <button
+            onClick={() => void runBackendAnalysis()}
+            className="px-3 py-1 rounded-lg bg-rose-500/20 border border-rose-400/40 text-rose-200 font-mono font-semibold shrink-0"
+          >
+            Retry Analysis
+          </button>
+        </div>
+      )}
+
+      {summary.totalRecords === 0 && !analyzeError && (
+        <div className="p-4 rounded-2xl bg-[#101827]/80 border border-cyan-500/20 text-xs text-slate-300 flex items-center justify-between gap-3">
+          <span>
+            No active dataset analyzed yet ({dataSourceMode === 'empty' ? 'FastAPI Standby' : dataSourceMode}). Upload a CSV or click <strong className="text-cyan-300">Run Statistical Analysis</strong> to populate real distribution metrics.
+          </span>
+        </div>
+      )}
 
       {/* Technique Navigation Tabs with Cyan Gradient Indicators */}
       <div className="flex items-center gap-2.5 overflow-x-auto pb-2 border-b border-cyan-500/15">

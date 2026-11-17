@@ -5,14 +5,15 @@ import {
   ShieldAlert,
   Brain,
   CheckCircle2,
-  Cpu,
-  Layers
+  Play,
+  Loader2,
+  Server
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_SETTINGS } from '../../utils/threatClassifier';
 
 export const SettingsPage: React.FC = () => {
-  const { settings, updateSettings, summary } = useApp();
+  const { settings, updateSettings, summary, runBackendAnalysis, isAnalyzing, backendBaseUrl } = useApp();
   const [savedBadge, setSavedBadge] = React.useState(false);
 
   const handleChange = (newSettings: typeof settings) => {
@@ -35,18 +36,30 @@ export const SettingsPage: React.FC = () => {
           <h1 className="text-2xl font-bold tracking-tight text-white font-heading">
             ENGINE CALIBRATION & HEURISTICS
           </h1>
-          <p className="text-xs text-cyan-300/80 mt-1 font-light">
-            Real-time tuning of statistical variance cutoffs, non-parametric multipliers, and ML isolation parameters.
+          <p className="text-xs text-cyan-300/80 mt-1 font-light flex flex-wrap items-center gap-2">
+            <span>Real-time tuning of statistical variance cutoffs, non-parametric multipliers, and ML isolation parameters.</span>
+            <span className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-300 bg-[#080B12] px-2 py-0.5 rounded border border-cyan-500/20">
+              <Server className="w-3 h-3 text-cyan-400" />
+              {backendBaseUrl}
+            </span>
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {savedBadge && (
             <span className="text-xs text-cyan-400 font-mono flex items-center gap-1.5 animate-pulse">
               <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-              <span>Applied to {summary.totalRecords} active flows</span>
+              <span>Thresholds updated ({summary.totalRecords} flows)</span>
             </span>
           )}
+          <button
+            onClick={() => void runBackendAnalysis(settings)}
+            disabled={isAnalyzing}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-[#080B12] bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 rounded-xl transition-all shadow-[0_0_15px_rgba(0,229,255,0.3)] disabled:opacity-60 font-heading"
+          >
+            {isAnalyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+            <span>{isAnalyzing ? 'Analyzing...' : 'Run Statistical Analysis'}</span>
+          </button>
           <button
             onClick={handleReset}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-300 bg-[#151E2D] hover:bg-cyan-950/40 hover:border-cyan-400/50 border border-cyan-500/25 rounded-xl transition-all"

@@ -31,7 +31,8 @@ export const Sidebar: React.FC = () => {
     summary,
     isMonitoringActive,
     sidebarCollapsed,
-    setSidebarCollapsed
+    setSidebarCollapsed,
+    dataSourceMode
   } = useApp();
 
   const navItems: NavItem[] = [
@@ -40,8 +41,8 @@ export const Sidebar: React.FC = () => {
       id: 'monitoring',
       label: 'Live Stream NOC',
       icon: Activity,
-      badge: isMonitoringActive ? 'LIVE' : 'OFF',
-      badgeTone: isMonitoringActive ? 'cyan' : 'slate'
+      badge: isMonitoringActive ? 'SIM' : 'OFF',
+      badgeTone: isMonitoringActive ? 'amber' : 'slate'
     },
     { id: 'upload', label: 'Dataset Ingestion', icon: UploadCloud },
     { id: 'statistical', label: 'Statistical Engine', icon: Calculator },
@@ -189,8 +190,8 @@ export const Sidebar: React.FC = () => {
           <div className="mx-3 mt-4 p-3 rounded-xl bg-[#101827]/80 border border-cyan-500/20 shadow-inner space-y-2">
             <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase tracking-wider">
               <span className="flex items-center gap-1.5">
-                <Radio className="w-3 h-3 text-cyan-400 animate-pulse" />
-                <span>Active Target</span>
+                <Radio className={`w-3 h-3 ${dataSourceMode === 'simulated' ? 'text-amber-400' : 'text-cyan-400'} animate-pulse`} />
+                <span>{dataSourceMode === 'simulated' ? 'Simulated' : 'Backend Target'}</span>
               </span>
               <span className="text-cyan-400 font-bold tabular-nums">
                 {summary.totalRecords} flows

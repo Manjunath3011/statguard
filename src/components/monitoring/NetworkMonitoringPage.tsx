@@ -41,19 +41,19 @@ export const NetworkMonitoringPage: React.FC = () => {
   return (
     <div className="p-8 space-y-7 max-w-7xl mx-auto cyber-grid">
       {/* Page Header: Network Operations Center (NOC) */}
-      <div className="p-6 rounded-2xl bg-gradient-to-r from-[#101827]/90 via-[#151E2D]/80 to-[#101827]/90 border border-cyan-500/20 backdrop-blur-xl shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-6 rounded-2xl bg-gradient-to-r from-[#101827]/90 via-[#151E2D]/80 to-[#101827]/90 border border-amber-500/25 backdrop-blur-xl shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight text-white font-heading">
               NETWORK OPERATIONS CENTER (NOC)
             </h1>
-            <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 shadow-[0_0_10px_rgba(0,229,255,0.25)] flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
-              REAL-TIME TELEMETRY PROBE
+            <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.2)] flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+              SIMULATED TELEMETRY STREAM (CLIENT-SIDE)
             </span>
           </div>
           <p className="text-xs text-slate-300 font-light mt-1">
-            Simulated flow capture probe ingesting synthetic high-frequency traffic into live statistical deviation analyzers.
+            Client-side synthetic packet simulator for UI stress-testing. Real statistical threat detections are served separately by the FastAPI backend (<span className="font-mono text-cyan-300">/api/analyze</span> & <span className="font-mono text-cyan-300">/api/threats</span>).
           </p>
         </div>
 

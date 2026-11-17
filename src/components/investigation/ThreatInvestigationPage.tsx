@@ -6,22 +6,38 @@ import {
   FileText,
   Save,
   ArrowLeft,
-  ShieldAlert,
-  Crosshair
+  Crosshair,
+  Loader2,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { InvestigationStatus, SeverityLevel } from '../../types/network';
 
 export const ThreatInvestigationPage: React.FC = () => {
-  const { summary, selectedAlert, setSelectedAlert, updateAlertStatus, setActivePage } = useApp();
+  const {
+    summary,
+    threats,
+    selectedAlert,
+    setSelectedAlert,
+    updateAlertStatus,
+    setActivePage,
+    investigateThreatById,
+    isInvestigating,
+    investigationError,
+    investigationDetails,
+    dataSourceMode
+  } = useApp();
   const [analystNotes, setAnalystNotes] = useState(selectedAlert?.analystNotes || '');
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const availableAnomalies = threats.length > 0 ? threats : summary.anomalies;
 
   // Sync notes when selected alert changes
   React.useEffect(() => {
     setAnalystNotes(selectedAlert?.analystNotes || '');
     setSaveSuccess(false);
-  }, [selectedAlert?.id]);
+  }, [selectedAlert?.id, selectedAlert?.analystNotes]);
 
   if (!selectedAlert) {
     return (
@@ -31,7 +47,7 @@ export const ThreatInvestigationPage: React.FC = () => {
         </div>
         <h2 className="text-lg font-bold text-white font-heading">No Anomaly Selected for Investigation</h2>
         <p className="text-xs text-slate-400 font-light">
-          Please select an anomaly from the Threat Detection Matrix or Dashboard to inspect mathematical deviations and triage actions.
+          Please select an anomaly from the Threat Detection Matrix or Dashboard to fetch forensic telemetry from GET /api/investigate/{'{id}'}.
         </p>
         <button
           onClick={() => setActivePage('detection')}
@@ -44,8 +60,7 @@ export const ThreatInvestigationPage: React.FC = () => {
   }
 
   const rec = selectedAlert.packetRecord;
-  const metrics = selectedAlert.metrics;
-  const baselines = summary.featureBaselines;
+  const baselines = investigationDetails?.featureBaselines || summary.featureBaselines;
 
   const handleStatusChange = (status: InvestigationStatus) => {
     updateAlertStatus(selectedAlert.id, status, analystNotes);
@@ -58,6 +73,12 @@ export const ThreatInvestigationPage: React.FC = () => {
   };
 
   const getTacticalRecommendations = () => {
+    if (
+      investigationDetails?.tacticalRecommendations &&
+      investigationDetails.tacticalRecommendations.length > 0
+    ) {
+      return investigationDetails.tacticalRecommendations;
+    }
     switch (selectedAlert.predictedAttack) {
       case 'DDoS Attack':
         return [
@@ -142,25 +163,67 @@ export const ThreatInvestigationPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Anomaly Quick Selector Dropdown */}
-        <div className="flex items-center gap-2">
+        {/* Anomaly Quick Selector Dropdown & GET /api/investigate/{id} Sync */}
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-slate-400 font-mono">Incident Target:</span>
           <select
             value={selectedAlert.id}
             onChange={(e) => {
-              const found = summary.anomalies.find(a => a.id === e.target.value);
-              if (found) setSelectedAlert(found);
+              const found = availableAnomalies.find(a => a.id === e.target.value);
+              if (found) {
+                setSelectedAlert(found);
+                if (dataSourceMode !== 'simulated') {
+                  void investigateThreatById(found.id);
+                }
+              }
             }}
             className="bg-[#080B12] border border-cyan-500/30 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono transition-all"
           >
-            {summary.anomalies.map(anom => (
+            {availableAnomalies.map(anom => (
               <option key={anom.id} value={anom.id}>
                 {anom.predictedAttack} - {anom.packetRecord.sourceIp} ({anom.compositeScore}/100)
               </option>
             ))}
           </select>
+
+          {dataSourceMode !== 'simulated' && (
+            <button
+              onClick={() => void investigateThreatById(selectedAlert.id)}
+              disabled={isInvestigating}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#080B12] hover:bg-cyan-950/40 border border-cyan-500/30 text-cyan-300 text-xs font-mono transition-all disabled:opacity-60"
+            >
+              {isInvestigating ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5" />
+              )}
+              <span>{isInvestigating ? 'Loading...' : 'Refresh Case'}</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {isInvestigating && (
+        <div className="p-3.5 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 text-xs text-cyan-300 font-mono flex items-center gap-2.5">
+          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+          <span>Fetching forensic investigation telemetry from GET /api/investigate/{selectedAlert.id}...</span>
+        </div>
+      )}
+
+      {investigationError && (
+        <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span className="font-mono">{investigationError.message}</span>
+          </div>
+          <button
+            onClick={() => void investigateThreatById(selectedAlert.id)}
+            className="px-3 py-1 rounded-lg bg-rose-500/20 border border-rose-400/40 text-rose-200 font-mono font-semibold shrink-0"
+          >
+            Retry GET /api/investigate/{selectedAlert.id}
+          </button>
+        </div>
+      )}
 
       {/* Case Management & Workflow Status Bar */}
       <div className="p-5 rounded-2xl bg-[#151E2D]/90 border border-cyan-500/20 backdrop-blur-xl shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -274,17 +337,19 @@ export const ThreatInvestigationPage: React.FC = () => {
                   <tr>
                     <td className="py-3 px-3 font-semibold text-white">Packet Count</td>
                     <td className="py-3 px-3 text-right text-slate-300 tabular-nums">
-                      {baselines.packetCount?.mean.toFixed(1) || '180'}
+                      {baselines.packetCount ? baselines.packetCount.mean.toFixed(1) : '—'}
                     </td>
                     <td className="py-3 px-3 text-right text-slate-300 tabular-nums">
-                      {Math.round(baselines.packetCount?.upperBound || 60)}
+                      {baselines.packetCount ? Math.round(baselines.packetCount.upperBound) : '—'}
                     </td>
                     <td className="py-3 px-3 text-right font-bold text-white tabular-nums">
                       {rec.packetCount.toLocaleString()}
                     </td>
                     <td className="py-3 px-3 text-right font-bold tabular-nums">
-                      <span className={rec.packetCount > (baselines.packetCount?.upperBound || 60) ? 'text-rose-400' : 'text-cyan-400'}>
-                        {((rec.packetCount - (baselines.packetCount?.mean || 0)) / Math.max(1, baselines.packetCount?.stdDev || 1)).toFixed(2)}σ
+                      <span className={baselines.packetCount && rec.packetCount > baselines.packetCount.upperBound ? 'text-rose-400' : 'text-cyan-400'}>
+                        {baselines.packetCount
+                          ? `${((rec.packetCount - baselines.packetCount.mean) / Math.max(1, baselines.packetCount.stdDev)).toFixed(2)}σ`
+                          : `${selectedAlert.metrics.zScore.toFixed(2)}σ`}
                       </span>
                     </td>
                   </tr>
@@ -292,10 +357,10 @@ export const ThreatInvestigationPage: React.FC = () => {
                   <tr>
                     <td className="py-3 px-3 font-semibold text-white">Total Bytes</td>
                     <td className="py-3 px-3 text-right text-slate-300 tabular-nums">
-                      {Math.round((baselines.totalBytes?.mean || 150000) / 1024)} KB
+                      {baselines.totalBytes ? `${Math.round(baselines.totalBytes.mean / 1024)} KB` : '—'}
                     </td>
                     <td className="py-3 px-3 text-right text-slate-300 tabular-nums">
-                      {Math.round((baselines.totalBytes?.upperBound || 25000) / 1024)} KB
+                      {baselines.totalBytes ? `${Math.round(baselines.totalBytes.upperBound / 1024)} KB` : '—'}
                     </td>
                     <td className="py-3 px-3 text-right font-bold text-white tabular-nums">
                       {rec.totalBytes > 1024 * 1024
@@ -303,8 +368,10 @@ export const ThreatInvestigationPage: React.FC = () => {
                         : `${Math.round(rec.totalBytes / 1024)} KB`}
                     </td>
                     <td className="py-3 px-3 text-right font-bold tabular-nums">
-                      <span className={rec.totalBytes > (baselines.totalBytes?.upperBound || 25000) ? 'text-rose-400' : 'text-cyan-400'}>
-                        {((rec.totalBytes - (baselines.totalBytes?.mean || 0)) / Math.max(1, baselines.totalBytes?.stdDev || 1)).toFixed(2)}σ
+                      <span className={baselines.totalBytes && rec.totalBytes > baselines.totalBytes.upperBound ? 'text-rose-400' : 'text-cyan-400'}>
+                        {baselines.totalBytes
+                          ? `${((rec.totalBytes - baselines.totalBytes.mean) / Math.max(1, baselines.totalBytes.stdDev)).toFixed(2)}σ`
+                          : '—'}
                       </span>
                     </td>
                   </tr>
@@ -312,17 +379,19 @@ export const ThreatInvestigationPage: React.FC = () => {
                   <tr>
                     <td className="py-3 px-3 font-semibold text-white">Connection Frequency</td>
                     <td className="py-3 px-3 text-right text-slate-300 tabular-nums">
-                      {baselines.connectionFrequency?.mean.toFixed(1) || '45'} pps
+                      {baselines.connectionFrequency ? `${baselines.connectionFrequency.mean.toFixed(1)} pps` : '—'}
                     </td>
                     <td className="py-3 px-3 text-right text-slate-300 tabular-nums">
-                      {Math.round(baselines.connectionFrequency?.upperBound || 70)} pps
+                      {baselines.connectionFrequency ? `${Math.round(baselines.connectionFrequency.upperBound)} pps` : '—'}
                     </td>
                     <td className="py-3 px-3 text-right font-bold text-white tabular-nums">
                       {rec.connectionFrequency} pps
                     </td>
                     <td className="py-3 px-3 text-right font-bold tabular-nums">
-                      <span className={rec.connectionFrequency > (baselines.connectionFrequency?.upperBound || 70) ? 'text-rose-400' : 'text-cyan-400'}>
-                        {((rec.connectionFrequency - (baselines.connectionFrequency?.mean || 0)) / Math.max(1, baselines.connectionFrequency?.stdDev || 1)).toFixed(2)}σ
+                      <span className={baselines.connectionFrequency && rec.connectionFrequency > baselines.connectionFrequency.upperBound ? 'text-rose-400' : 'text-cyan-400'}>
+                        {baselines.connectionFrequency
+                          ? `${((rec.connectionFrequency - baselines.connectionFrequency.mean) / Math.max(1, baselines.connectionFrequency.stdDev)).toFixed(2)}σ`
+                          : '—'}
                       </span>
                     </td>
                   </tr>

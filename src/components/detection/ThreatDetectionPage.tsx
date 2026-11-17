@@ -4,15 +4,23 @@ import {
   ArrowUpDown,
   SearchCode,
   Download,
-  ShieldAlert,
-  Filter
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { SeverityLevel } from '../../types/network';
 import { exportAnomaliesAsCSV } from '../../utils/pdfGenerator';
 
 export const ThreatDetectionPage: React.FC = () => {
-  const { summary, selectAlertForInvestigation } = useApp();
+  const {
+    summary,
+    threats,
+    selectAlertForInvestigation,
+    refreshThreats,
+    isThreatsLoading,
+    threatsError,
+    dataSourceMode
+  } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSeverity, setSelectedSeverity] = useState<string>('ALL');
@@ -20,41 +28,53 @@ export const ThreatDetectionPage: React.FC = () => {
   const [sortField, setSortField] = useState<'score' | 'time'>('score');
   const [sortAsc, setSortAsc] = useState<boolean>(false);
 
+  // Sync threats from GET /api/threats when entering page in backend mode
+  React.useEffect(() => {
+    if (dataSourceMode !== 'simulated') {
+      void refreshThreats();
+    }
+  }, [dataSourceMode, refreshThreats]);
+
+  const activeThreatsList = threats.length > 0 ? threats : summary.anomalies;
+
   // Filter anomalies
   const filteredAnomalies = React.useMemo(() => {
-    return summary.anomalies.filter(anom => {
-      // Search filter
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase().trim();
-        const matchesIp = anom.packetRecord.sourceIp.toLowerCase().includes(query) ||
-          anom.packetRecord.destIp.toLowerCase().includes(query);
-        const matchesCat = anom.predictedAttack.toLowerCase().includes(query);
-        const matchesProto = anom.packetRecord.protocol.toLowerCase().includes(query);
-        const matchesPort = anom.packetRecord.destPort.toString().includes(query);
-        if (!matchesIp && !matchesCat && !matchesProto && !matchesPort) return false;
-      }
+    return activeThreatsList
+      .filter(anom => {
+        // Search filter
+        if (searchQuery.trim()) {
+          const query = searchQuery.toLowerCase().trim();
+          const matchesIp =
+            anom.packetRecord.sourceIp.toLowerCase().includes(query) ||
+            anom.packetRecord.destIp.toLowerCase().includes(query);
+          const matchesCat = anom.predictedAttack.toLowerCase().includes(query);
+          const matchesProto = anom.packetRecord.protocol.toLowerCase().includes(query);
+          const matchesPort = anom.packetRecord.destPort.toString().includes(query);
+          if (!matchesIp && !matchesCat && !matchesProto && !matchesPort) return false;
+        }
 
-      // Severity filter
-      if (selectedSeverity !== 'ALL' && anom.severity !== selectedSeverity) {
-        return false;
-      }
+        // Severity filter
+        if (selectedSeverity !== 'ALL' && anom.severity !== selectedSeverity) {
+          return false;
+        }
 
-      // Category filter
-      if (selectedCategory !== 'ALL' && anom.predictedAttack !== selectedCategory) {
-        return false;
-      }
+        // Category filter
+        if (selectedCategory !== 'ALL' && anom.predictedAttack !== selectedCategory) {
+          return false;
+        }
 
-      return true;
-    }).sort((a, b) => {
-      if (sortField === 'score') {
-        return sortAsc ? a.compositeScore - b.compositeScore : b.compositeScore - a.compositeScore;
-      } else {
-        const tA = new Date(a.packetRecord.timestamp).getTime();
-        const tB = new Date(b.packetRecord.timestamp).getTime();
-        return sortAsc ? tA - tB : tB - tA;
-      }
-    });
-  }, [summary.anomalies, searchQuery, selectedSeverity, selectedCategory, sortField, sortAsc]);
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortField === 'score') {
+          return sortAsc ? a.compositeScore - b.compositeScore : b.compositeScore - a.compositeScore;
+        } else {
+          const tA = new Date(a.packetRecord.timestamp).getTime();
+          const tB = new Date(b.packetRecord.timestamp).getTime();
+          return sortAsc ? tA - tB : tB - tA;
+        }
+      });
+  }, [activeThreatsList, searchQuery, selectedSeverity, selectedCategory, sortField, sortAsc]);
 
   const severityBadge = (severity: SeverityLevel) => {
     switch (severity) {
@@ -82,14 +102,46 @@ export const ThreatDetectionPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => exportAnomaliesAsCSV(summary)}
-          className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-cyan-300 bg-[#151E2D] hover:bg-cyan-950/40 hover:border-cyan-400/50 border border-cyan-500/25 rounded-xl transition-all shadow-[0_0_12px_rgba(0,229,255,0.15)]"
-        >
-          <Download className="w-4 h-4 text-cyan-400" />
-          <span>Export Anomalies CSV</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() =>
+              void refreshThreats({
+                severity: selectedSeverity,
+                category: selectedCategory,
+                search: searchQuery
+              })
+            }
+            disabled={isThreatsLoading}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-cyan-300 bg-[#151E2D] hover:bg-cyan-950/40 hover:border-cyan-400/50 border border-cyan-500/25 rounded-xl transition-all disabled:opacity-60 font-mono"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${isThreatsLoading ? 'animate-spin' : ''}`} />
+            <span>{isThreatsLoading ? 'Fetching Threats...' : 'Sync Threats (GET /api/threats)'}</span>
+          </button>
+
+          <button
+            onClick={() => exportAnomaliesAsCSV({ ...summary, anomalies: activeThreatsList })}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-cyan-300 bg-[#151E2D] hover:bg-cyan-950/40 hover:border-cyan-400/50 border border-cyan-500/25 rounded-xl transition-all shadow-[0_0_12px_rgba(0,229,255,0.15)]"
+          >
+            <Download className="w-4 h-4 text-cyan-400" />
+            <span>Export Anomalies CSV</span>
+          </button>
+        </div>
       </div>
+
+      {threatsError && (
+        <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span className="font-mono">{threatsError.message}</span>
+          </div>
+          <button
+            onClick={() => void refreshThreats()}
+            className="px-3 py-1 rounded-lg bg-rose-500/20 border border-rose-400/40 text-rose-200 font-mono font-semibold shrink-0"
+          >
+            Retry GET /api/threats
+          </button>
+        </div>
+      )}
 
       {/* KPI Summary Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3.5">
@@ -208,7 +260,11 @@ export const ThreatDetectionPage: React.FC = () => {
               {filteredAnomalies.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-slate-400 font-light">
-                    No anomalies match the selected filters or search query.
+                    {isThreatsLoading
+                      ? 'Loading detected threats from FastAPI GET /api/threats...'
+                      : activeThreatsList.length === 0
+                      ? 'No threat detections returned from the FastAPI backend yet.'
+                      : 'No anomalies match the selected filters or search query.'}
                   </td>
                 </tr>
               ) : (

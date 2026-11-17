@@ -254,6 +254,19 @@ export const NetworkTopologyVisualization: React.FC<NetworkTopologyProps> = ({
 
       {/* SVG Canvas Topology */}
       <div className="relative w-full h-[400px] overflow-hidden my-2 select-none">
+        {records.length === 0 && anomalies.length === 0 ? (
+          <div className="h-full w-full flex flex-col items-center justify-center text-center px-6 space-y-3 border border-dashed border-cyan-500/20 rounded-2xl bg-[#070D1F]/60">
+            <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+              <Wifi className="w-6 h-6" />
+            </div>
+            <h3 className="text-sm font-bold text-white font-heading">
+              No Network Topology Vectors Loaded
+            </h3>
+            <p className="text-xs text-slate-400 max-w-md font-light">
+              Upload a network traffic CSV and run statistical analysis via the FastAPI backend to map real host telemetry and threat conduits.
+            </p>
+          </div>
+        ) : (
         <svg className="w-full h-full" viewBox="0 0 900 400">
           <defs>
             {/* Linear gradients for links */}
@@ -442,6 +455,7 @@ export const NetworkTopologyVisualization: React.FC<NetworkTopologyProps> = ({
             );
           })}
         </svg>
+        )}
 
         {/* Selected Node Inspector Hover Card */}
         {selectedNode && (

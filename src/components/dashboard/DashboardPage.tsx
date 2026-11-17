@@ -7,20 +7,13 @@ import {
   Layers,
   Flame,
   ArrowUpRight,
-  Radio,
   Clock,
-  TrendingUp,
-  Cpu,
-  Terminal,
-  Zap,
-  BarChart3,
-  Sliders,
-  Sparkles,
-  PieChart as PieChartIcon,
-  Shield,
   SearchCode,
-  Lock,
-  Network
+  RefreshCw,
+  Play,
+  AlertCircle,
+  Loader2,
+  Server
 } from 'lucide-react';
 import {
   AreaChart,
@@ -34,18 +27,33 @@ import {
   Pie,
   Cell,
   BarChart,
-  Bar,
-  LineChart,
-  Line
+  Bar
 } from 'recharts';
 import { useApp } from '../../context/AppContext';
 import { NetworkTopologyVisualization } from './NetworkTopologyVisualization';
 
 export const DashboardPage: React.FC = () => {
-  const { summary, setActivePage, loadSample, selectAlertForInvestigation } = useApp();
+  const {
+    summary,
+    threats,
+    setActivePage,
+    loadSample,
+    selectAlertForInvestigation,
+    backendBaseUrl,
+    dataSourceMode,
+    isDashboardLoading,
+    dashboardError,
+    isAnalyzing,
+    analyzeError,
+    refreshDashboard,
+    runBackendAnalysis
+  } = useApp();
 
-  // Traffic time-series data for chart with mini sparkline values
+  // Traffic time-series data from backend timeSeries or records
   const timeSeriesData = React.useMemo(() => {
+    if (summary.timeSeries && summary.timeSeries.length > 0) {
+      return summary.timeSeries.slice(0, 36);
+    }
     return summary.records.slice(0, 36).map((r, i) => {
       const isAnom = summary.anomalies.some(a => a.packetRecord.id === r.id);
       return {
@@ -59,21 +67,35 @@ export const DashboardPage: React.FC = () => {
 
   // Mini sparklines for stats cards
   const sparklinePackets = React.useMemo(() => {
-    return summary.records.slice(0, 12).map((r, i) => ({ v: r.packetCount }));
-  }, [summary]);
+    if (timeSeriesData.length > 0) {
+      return timeSeriesData.slice(0, 12).map(pt => ({ v: pt.packetCount }));
+    }
+    return [];
+  }, [timeSeriesData]);
 
   const sparklineAnomalies = React.useMemo(() => {
-    return summary.records.slice(0, 12).map((r, i) => {
-      const isAnom = summary.anomalies.some(a => a.packetRecord.id === r.id);
-      return { v: isAnom ? 80 : 15 };
-    });
-  }, [summary]);
+    if (summary.records.length > 0) {
+      return summary.records.slice(0, 12).map(r => {
+        const isAnom = summary.anomalies.some(a => a.packetRecord.id === r.id);
+        return { v: isAnom ? 80 : 15 };
+      });
+    }
+    if (timeSeriesData.length > 0) {
+      return timeSeriesData.slice(0, 12).map(pt => ({ v: pt.isAnomaly !== null ? 80 : 15 }));
+    }
+    return [];
+  }, [summary.records, summary.anomalies, timeSeriesData]);
 
   // Donut chart: Normal vs Anomalous (Electric Cyan vs Neon Red)
-  const donutData = React.useMemo(() => [
-    { name: 'Normal Baseline Traffic', value: summary.normalRecords, color: '#00E5FF' },
-    { name: 'Suspicious Anomalies', value: summary.anomalousRecords, color: '#FF3366' }
-  ], [summary]);
+  const donutData = React.useMemo(() => {
+    if (summary.totalRecords === 0 && summary.normalRecords === 0 && summary.anomalousRecords === 0) {
+      return [];
+    }
+    return [
+      { name: 'Normal Baseline Traffic', value: summary.normalRecords, color: '#00E5FF' },
+      { name: 'Suspicious Anomalies', value: summary.anomalousRecords, color: '#FF3366' }
+    ];
+  }, [summary.totalRecords, summary.normalRecords, summary.anomalousRecords]);
 
   // Attack category distribution
   const attackCategoryData = React.useMemo(() => {
@@ -84,19 +106,62 @@ export const DashboardPage: React.FC = () => {
         count
       }))
       .filter(item => item.count > 0);
-  }, [summary]);
+  }, [summary.categoryCounts]);
 
   // Protocol breakdown
   const protocolData = React.useMemo(() => {
     return Object.entries(summary.protocolCounts).map(([proto, count]) => ({
       name: proto,
       value: count,
-      color: proto === 'TCP' ? '#00E5FF' : proto === 'UDP' ? '#38BDF8' : proto === 'HTTPS' ? '#8B5CF6' : proto === 'SSH' ? '#F59E0B' : '#A78BFA'
+      color:
+        proto === 'TCP'
+          ? '#00E5FF'
+          : proto === 'UDP'
+          ? '#38BDF8'
+          : proto === 'HTTPS'
+          ? '#8B5CF6'
+          : proto === 'SSH'
+          ? '#F59E0B'
+          : '#A78BFA'
     }));
-  }, [summary]);
+  }, [summary.protocolCounts]);
 
-  const normalPct = summary.totalRecords > 0 ? (summary.normalRecords / summary.totalRecords) * 100 : 100;
-  const suspiciousPct = summary.totalRecords > 0 ? (summary.anomalousRecords / summary.totalRecords) * 100 : 0;
+  const totalPacketsCount =
+    summary.totalPackets !== undefined
+      ? summary.totalPackets
+      : summary.records.reduce((acc, r) => acc + r.packetCount, 0);
+
+  const normalPct =
+    summary.normalPercentage !== undefined && summary.totalRecords > 0
+      ? summary.normalPercentage
+      : summary.totalRecords > 0
+      ? (summary.normalRecords / summary.totalRecords) * 100
+      : 0;
+
+  const suspiciousPct =
+    summary.suspiciousPercentage !== undefined && summary.totalRecords > 0
+      ? summary.suspiciousPercentage
+      : summary.totalRecords > 0
+      ? (summary.anomalousRecords / summary.totalRecords) * 100
+      : 0;
+
+  const activeAnomalies = summary.anomalies.length > 0 ? summary.anomalies : threats;
+
+  const zScoreBreaches =
+    summary.methodCounts?.zScore ?? activeAnomalies.filter(a => a.metrics.zScoreFlagged).length;
+  const iqrBreaches =
+    summary.methodCounts?.iqr ?? activeAnomalies.filter(a => a.metrics.iqrFlagged).length;
+  const maBreaches =
+    summary.methodCounts?.movingAvg ?? activeAnomalies.filter(a => a.metrics.movingAvgFlagged).length;
+  const iforestBreaches =
+    summary.methodCounts?.isolationForest ??
+    activeAnomalies.filter(a => a.metrics.isolationForestFlagged).length;
+  const entropyDisplay =
+    summary.methodCounts?.entropyValue !== undefined && summary.methodCounts?.entropyValue !== null
+      ? `${summary.methodCounts.entropyValue.toFixed(2)} bits`
+      : activeAnomalies[0]?.metrics.entropyValue !== undefined && activeAnomalies.length > 0
+      ? `${activeAnomalies[0].metrics.entropyValue.toFixed(2)} bits`
+      : '—';
 
   return (
     <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
@@ -109,14 +174,42 @@ export const DashboardPage: React.FC = () => {
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 text-xs font-mono shadow-[0_0_12px_rgba(0,229,255,0.25)]">
-                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#00E5FF]"></span>
-                <span className="font-semibold tracking-wider uppercase">DEFENSE SHIELD ENGAGED</span>
-              </div>
+              {dataSourceMode === 'simulated' ? (
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/80 border border-amber-500/40 text-amber-300 text-xs font-mono shadow-[0_0_12px_rgba(245,158,11,0.25)]">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                  <span className="font-semibold tracking-wider uppercase">
+                    SIMULATED DEMO DATA (CLIENT-SIDE)
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 text-xs font-mono shadow-[0_0_12px_rgba(0,229,255,0.25)]">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isDashboardLoading || isAnalyzing
+                        ? 'bg-cyan-400 animate-ping'
+                        : dashboardError
+                        ? 'bg-rose-400'
+                        : 'bg-cyan-400 animate-pulse shadow-[0_0_8px_#00E5FF]'
+                    }`}
+                  ></span>
+                  <span className="font-semibold tracking-wider uppercase">
+                    {isDashboardLoading
+                      ? 'SYNCING FASTAPI BACKEND...'
+                      : isAnalyzing
+                      ? 'RUNNING STATISTICAL ANALYSIS...'
+                      : dataSourceMode === 'backend'
+                      ? 'FASTAPI BACKEND ANALYSIS ACTIVE'
+                      : 'DEFENSE SHIELD STANDBY'}
+                  </span>
+                </div>
+              )}
 
               <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/80 border border-slate-700/60 text-slate-300 text-xs font-mono">
                 <Clock className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Last Telemetry Sync: {new Date(summary.analyzedAt).toLocaleTimeString()}</span>
+                <span>
+                  Last Telemetry Sync:{' '}
+                  {summary.analyzedAt ? new Date(summary.analyzedAt).toLocaleTimeString() : 'Not Yet Analyzed'}
+                </span>
               </div>
             </div>
 
@@ -128,54 +221,124 @@ export const DashboardPage: React.FC = () => {
             </p>
           </div>
 
-          {/* Quick Dataset Selector */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-[#070D1F]/90 border border-cyan-500/25 p-2 rounded-2xl shadow-inner">
-            <span className="text-xs font-mono text-cyan-400 pl-2">Capture Preset:</span>
-            <div className="flex items-center gap-1 text-xs font-mono">
+          {/* Backend Controls & Quick Demo Preset Selector */}
+          <div className="flex flex-col items-start lg:items-end gap-3">
+            <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={() => loadSample('benchmark')}
-                className="px-3 py-1.5 rounded-xl bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 border border-cyan-500/30 font-semibold transition-all shadow-[0_0_10px_rgba(0,229,255,0.2)]"
+                onClick={() => void refreshDashboard()}
+                disabled={isDashboardLoading}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#070D1F]/90 hover:bg-cyan-950/50 border border-cyan-500/30 text-cyan-300 text-xs font-mono font-semibold transition-all disabled:opacity-60"
               >
-                Multi-Vector
+                <RefreshCw className={`w-3.5 h-3.5 ${isDashboardLoading ? 'animate-spin' : ''}`} />
+                <span>{isDashboardLoading ? 'Syncing...' : 'Sync Dashboard'}</span>
               </button>
+
               <button
-                onClick={() => loadSample('clean')}
-                className="px-3 py-1.5 rounded-xl text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/10 transition-all font-medium"
+                onClick={() => void runBackendAnalysis()}
+                disabled={isAnalyzing}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-[#080B12] text-xs font-bold font-heading transition-all shadow-[0_0_15px_rgba(0,229,255,0.3)] disabled:opacity-60"
               >
-                Clean Baseline
+                {isAnalyzing ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Play className="w-3.5 h-3.5" />
+                )}
+                <span>{isAnalyzing ? 'Analyzing...' : 'Run Statistical Analysis'}</span>
               </button>
-              <button
-                onClick={() => loadSample('flooding')}
-                className="px-3 py-1.5 rounded-xl text-slate-300 hover:text-rose-300 hover:bg-rose-500/10 transition-all font-medium"
-              >
-                Flooding Surge
-              </button>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 bg-[#070D1F]/90 border border-cyan-500/25 p-1.5 rounded-2xl shadow-inner">
+              <span className="text-[11px] font-mono text-amber-300/90 pl-2">Demo Simulation:</span>
+              <div className="flex items-center gap-1 text-xs font-mono">
+                <button
+                  onClick={() => loadSample('benchmark')}
+                  className="px-2.5 py-1 rounded-xl bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 border border-cyan-500/30 font-semibold transition-all"
+                >
+                  Multi-Vector
+                </button>
+                <button
+                  onClick={() => loadSample('clean')}
+                  className="px-2.5 py-1 rounded-xl text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/10 transition-all font-medium"
+                >
+                  Clean Baseline
+                </button>
+                <button
+                  onClick={() => loadSample('flooding')}
+                  className="px-2.5 py-1 rounded-xl text-slate-300 hover:text-rose-300 hover:bg-rose-500/10 transition-all font-medium"
+                >
+                  Flooding Surge
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Status ticker strip */}
         <div className="relative z-10 pt-5 mt-6 border-t border-cyan-500/15 flex flex-wrap items-center justify-between gap-4 text-xs font-mono text-slate-400">
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-6">
             <span className="flex items-center gap-2 text-cyan-300">
-              <Activity className="w-4 h-4 text-cyan-400" />
-              <span>Inspection Mode: <strong className="text-white">Continuous Statistical Pipeline</strong></span>
+              <Server className="w-4 h-4 text-cyan-400" />
+              <span>
+                Data Source:{' '}
+                <strong className="text-white">
+                  {dataSourceMode === 'backend'
+                    ? `FastAPI Backend (${backendBaseUrl})`
+                    : dataSourceMode === 'simulated'
+                    ? 'Client-Side Simulated Capture'
+                    : `FastAPI Standby (${backendBaseUrl})`}
+                </strong>
+              </span>
             </span>
-            <span className="hidden sm:inline-block">Target Dataset: <strong className="text-slate-200">{summary.datasetName}</strong></span>
+            <span className="hidden sm:inline-block">
+              Target Dataset: <strong className="text-slate-200">{summary.datasetName}</strong>
+            </span>
           </div>
 
           <div className="flex items-center gap-4">
-            <span className="text-slate-300">Flows Processed: <strong className="text-cyan-400 font-bold">{summary.totalRecords.toLocaleString()}</strong></span>
+            <span className="text-slate-300">
+              Flows Processed: <strong className="text-cyan-400 font-bold">{summary.totalRecords.toLocaleString()}</strong>
+            </span>
             <button
               onClick={() => setActivePage('monitoring')}
               className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-semibold group"
             >
-              <span>Launch Live Monitor</span>
+              <span>Launch Live Monitor (Simulated)</span>
               <ArrowUpRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
             </button>
           </div>
         </div>
       </div>
+
+      {/* Graceful API Error Banner (Does NOT invent fake metrics) */}
+      {(dashboardError || analyzeError) && (
+        <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 backdrop-blur-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="font-bold text-rose-200 font-heading">
+                FastAPI Backend Communication Notice ({(analyzeError || dashboardError)?.endpoint})
+              </div>
+              <p className="text-rose-300/90 font-mono">
+                {(analyzeError || dashboardError)?.message}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => void refreshDashboard()}
+              className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/40 text-rose-200 font-mono font-semibold transition-all"
+            >
+              Retry Backend Sync
+            </button>
+            <button
+              onClick={() => setActivePage('upload')}
+              className="px-3 py-1.5 rounded-xl bg-[#0B132B] hover:bg-cyan-950/50 border border-cyan-500/30 text-cyan-300 font-mono font-semibold transition-all"
+            >
+              Upload Dataset
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 2. STATISTICS CARDS: 5 Redesigned Metric Cards with Mini Trends & Glowing Accents */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
@@ -188,14 +351,24 @@ export const DashboardPage: React.FC = () => {
             </div>
           </div>
           <div className="text-3xl font-extrabold text-white font-mono tabular-nums tracking-tight">
-            {summary.records.reduce((acc, r) => acc + r.packetCount, 0).toLocaleString()}
+            {isDashboardLoading && summary.totalRecords === 0 ? (
+              <span className="inline-block w-24 h-8 rounded-lg bg-cyan-500/15 animate-pulse" />
+            ) : (
+              totalPacketsCount.toLocaleString()
+            )}
           </div>
           <div className="h-9 w-full mt-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={sparklinePackets}>
-                <Area type="monotone" dataKey="v" stroke="#00E5FF" strokeWidth={2} fill="#00E5FF" fillOpacity={0.15} />
-              </AreaChart>
-            </ResponsiveContainer>
+            {sparklinePackets.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={sparklinePackets}>
+                  <Area type="monotone" dataKey="v" stroke="#00E5FF" strokeWidth={2} fill="#00E5FF" fillOpacity={0.15} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center text-[10px] font-mono text-slate-500">
+                {isDashboardLoading ? 'Loading telemetry...' : 'Awaiting packet stream'}
+              </div>
+            )}
           </div>
           <div className="text-[11px] text-slate-400 mt-2 font-light">
             In {summary.totalRecords.toLocaleString()} verified flows
@@ -211,12 +384,16 @@ export const DashboardPage: React.FC = () => {
             </div>
           </div>
           <div className="text-3xl font-extrabold text-emerald-400 font-mono tabular-nums tracking-tight">
-            {normalPct.toFixed(1)}%
+            {isDashboardLoading && summary.totalRecords === 0 ? (
+              <span className="inline-block w-20 h-8 rounded-lg bg-emerald-500/15 animate-pulse" />
+            ) : (
+              `${normalPct.toFixed(1)}%`
+            )}
           </div>
           <div className="w-full bg-slate-800 rounded-full h-2 mt-4 overflow-hidden border border-slate-700">
             <div
               className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-500 shadow-[0_0_8px_#10B981]"
-              style={{ width: `${normalPct}%` }}
+              style={{ width: `${Math.min(100, Math.max(0, normalPct))}%` }}
             ></div>
           </div>
           <div className="text-[11px] text-slate-400 mt-3 font-light">
@@ -233,14 +410,24 @@ export const DashboardPage: React.FC = () => {
             </div>
           </div>
           <div className="text-3xl font-extrabold text-amber-400 font-mono tabular-nums tracking-tight">
-            {summary.anomalousRecords}
+            {isDashboardLoading && summary.totalRecords === 0 ? (
+              <span className="inline-block w-16 h-8 rounded-lg bg-amber-500/15 animate-pulse" />
+            ) : (
+              summary.anomalousRecords
+            )}
           </div>
           <div className="h-9 w-full mt-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={sparklineAnomalies}>
-                <Bar dataKey="v" fill="#F59E0B" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {sparklineAnomalies.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={sparklineAnomalies}>
+                  <Bar dataKey="v" fill="#F59E0B" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center text-[10px] font-mono text-slate-500">
+                {isDashboardLoading ? 'Loading outliers...' : 'No anomaly series'}
+              </div>
+            )}
           </div>
           <div className="text-[11px] text-slate-400 mt-2 font-light">
             {suspiciousPct.toFixed(1)}% outlier rate
@@ -256,11 +443,21 @@ export const DashboardPage: React.FC = () => {
             </div>
           </div>
           <div className="text-3xl font-extrabold text-rose-400 font-mono tabular-nums tracking-tight">
-            {summary.criticalCount}
+            {isDashboardLoading && summary.totalRecords === 0 ? (
+              <span className="inline-block w-16 h-8 rounded-lg bg-rose-500/15 animate-pulse" />
+            ) : (
+              summary.criticalCount
+            )}
           </div>
           <div className="flex items-center gap-2 mt-4">
-            <span className="w-3 h-3 rounded-full bg-rose-500 shadow-[0_0_8px_#FF3366] animate-ping"></span>
-            <span className="text-xs font-mono text-rose-300 font-semibold">URGENT SOC TRIAGE</span>
+            <span
+              className={`w-3 h-3 rounded-full ${
+                summary.criticalCount > 0 ? 'bg-rose-500 shadow-[0_0_8px_#FF3366] animate-ping' : 'bg-slate-600'
+              }`}
+            ></span>
+            <span className="text-xs font-mono text-rose-300 font-semibold">
+              {summary.criticalCount > 0 ? 'URGENT SOC TRIAGE' : 'NO CRITICAL ALERTS'}
+            </span>
           </div>
           <div className="text-[11px] text-slate-400 mt-3 font-light">
             Multi-variate critical breaches
@@ -276,19 +473,29 @@ export const DashboardPage: React.FC = () => {
             </div>
           </div>
           <div className="flex items-baseline gap-1">
-            <span className={`text-3xl font-extrabold font-mono tabular-nums tracking-tight ${summary.networkRiskScore > 60 ? 'text-rose-400' : summary.networkRiskScore > 30 ? 'text-amber-400' : 'text-cyan-400'}`}>
-              {summary.networkRiskScore}
-            </span>
+            {isDashboardLoading && summary.totalRecords === 0 ? (
+              <span className="inline-block w-16 h-8 rounded-lg bg-purple-500/15 animate-pulse" />
+            ) : (
+              <span className={`text-3xl font-extrabold font-mono tabular-nums tracking-tight ${summary.networkRiskScore > 60 ? 'text-rose-400' : summary.networkRiskScore > 30 ? 'text-amber-400' : 'text-cyan-400'}`}>
+                {summary.networkRiskScore}
+              </span>
+            )}
             <span className="text-xs text-slate-400 font-mono">/100</span>
           </div>
           <div className="w-full bg-slate-800 rounded-full h-2 mt-4 overflow-hidden border border-slate-700">
             <div
               className={`h-full rounded-full transition-all duration-500 ${summary.networkRiskScore > 60 ? 'bg-gradient-to-r from-amber-500 to-rose-500 shadow-[0_0_8px_#FF3366]' : 'bg-gradient-to-r from-cyan-500 to-blue-500 shadow-[0_0_8px_#00E5FF]'}`}
-              style={{ width: `${summary.networkRiskScore}%` }}
+              style={{ width: `${Math.min(100, Math.max(0, summary.networkRiskScore))}%` }}
             ></div>
           </div>
           <div className="text-[11px] text-slate-400 mt-3 font-light">
-            {summary.networkRiskScore > 60 ? 'Active Cyber Incident State' : summary.networkRiskScore > 30 ? 'Elevated Monitoring Level' : 'Nominal Operational State'}
+            {summary.totalRecords === 0
+              ? 'Awaiting Backend Baseline'
+              : summary.networkRiskScore > 60
+              ? 'Active Cyber Incident State'
+              : summary.networkRiskScore > 30
+              ? 'Elevated Monitoring Level'
+              : 'Nominal Operational State'}
           </div>
         </div>
       </div>
@@ -320,25 +527,33 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={timeSeriesData}>
-                <defs>
-                  <linearGradient id="cyberAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#00E5FF" stopOpacity={0.45} />
-                    <stop offset="60%" stopColor="#387BFF" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#00E5FF" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#16223B" />
-                <XAxis dataKey="time" stroke="#475569" tick={{ fontSize: 10, fill: '#64748b' }} />
-                <YAxis stroke="#475569" tick={{ fontSize: 10, fill: '#64748b' }} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#091124', borderColor: '#00E5FF50', borderRadius: '12px', fontSize: '12px', color: '#F1F5F9', boxShadow: '0 0 15px rgba(0,229,255,0.2)' }}
-                  labelStyle={{ color: '#00E5FF', fontWeight: 600 }}
-                />
-                <Area type="monotone" dataKey="packetCount" stroke="#00E5FF" strokeWidth={2.5} fillOpacity={1} fill="url(#cyberAreaGrad)" name="Packet Volume" />
-              </AreaChart>
-            </ResponsiveContainer>
+            {timeSeriesData.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-xs text-slate-400 font-light border border-dashed border-slate-800 rounded-2xl">
+                {isDashboardLoading
+                  ? 'Fetching network throughput telemetry from FastAPI...'
+                  : 'No throughput time-series available yet. Upload a CSV and trigger POST /api/analyze.'}
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={timeSeriesData}>
+                  <defs>
+                    <linearGradient id="cyberAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#00E5FF" stopOpacity={0.45} />
+                      <stop offset="60%" stopColor="#387BFF" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="#00E5FF" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#16223B" />
+                  <XAxis dataKey="time" stroke="#475569" tick={{ fontSize: 10, fill: '#64748b' }} />
+                  <YAxis stroke="#475569" tick={{ fontSize: 10, fill: '#64748b' }} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#091124', borderColor: '#00E5FF50', borderRadius: '12px', fontSize: '12px', color: '#F1F5F9', boxShadow: '0 0 15px rgba(0,229,255,0.2)' }}
+                    labelStyle={{ color: '#00E5FF', fontWeight: 600 }}
+                  />
+                  <Area type="monotone" dataKey="packetCount" stroke="#00E5FF" strokeWidth={2.5} fillOpacity={1} fill="url(#cyberAreaGrad)" name="Packet Volume" />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -352,28 +567,34 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           <div className="h-44 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={donutData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                  stroke="#070D1F"
-                  strokeWidth={3}
-                >
-                  {donutData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#091124', borderColor: '#00E5FF50', borderRadius: '12px', fontSize: '12px', color: '#F1F5F9' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+            {donutData.length === 0 ? (
+              <div className="text-xs text-slate-400 font-light text-center px-4">
+                {isDashboardLoading ? 'Loading health ratio...' : 'No flow breakdown received yet.'}
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={donutData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                    stroke="#070D1F"
+                    strokeWidth={3}
+                  >
+                    {donutData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#091124', borderColor: '#00E5FF50', borderRadius: '12px', fontSize: '12px', color: '#F1F5F9' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
           <div className="space-y-2.5 pt-3 border-t border-slate-800 text-xs font-mono">
@@ -449,22 +670,28 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-2 gap-3 py-2">
-            {protocolData.map(proto => (
-              <div key={proto.name} className="p-3.5 bg-[#080E20] rounded-2xl border border-slate-800/80 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-3 h-3 rounded-md" style={{ backgroundColor: proto.color }}></span>
-                  <span className="text-xs font-semibold text-white font-mono">{proto.name}</span>
-                </div>
-                <span className="text-xs font-bold font-mono text-cyan-300 tabular-nums">
-                  {proto.value} <span className="text-[10px] text-slate-400 font-normal">flows</span>
-                </span>
+            {protocolData.length === 0 ? (
+              <div className="col-span-2 py-8 text-center text-xs text-slate-400 font-light border border-dashed border-slate-800 rounded-2xl">
+                No Layer-4 protocol breakdown received yet.
               </div>
-            ))}
+            ) : (
+              protocolData.map(proto => (
+                <div key={proto.name} className="p-3.5 bg-[#080E20] rounded-2xl border border-slate-800/80 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-3 h-3 rounded-md" style={{ backgroundColor: proto.color }}></span>
+                    <span className="text-xs font-semibold text-white font-mono">{proto.name}</span>
+                  </div>
+                  <span className="text-xs font-bold font-mono text-cyan-300 tabular-nums">
+                    {proto.value} <span className="text-[10px] text-slate-400 font-normal">flows</span>
+                  </span>
+                </div>
+              ))
+            )}
           </div>
 
           <div className="pt-3 border-t border-slate-800 text-xs text-slate-400 flex items-center justify-between font-mono">
             <span>Overall Packet Volume:</span>
-            <span className="text-white font-bold">{summary.records.reduce((s, r) => s + r.packetCount, 0).toLocaleString()} pkts</span>
+            <span className="text-white font-bold">{totalPacketsCount.toLocaleString()} pkts</span>
           </div>
         </div>
       </div>
@@ -488,66 +715,74 @@ export const DashboardPage: React.FC = () => {
             onClick={() => setActivePage('detection')}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-cyan-300 bg-[#070D1F] hover:bg-cyan-950/40 border border-cyan-500/30 rounded-xl transition-all shadow-[0_0_12px_rgba(0,229,255,0.15)] font-mono self-start sm:self-auto"
           >
-            <span>Open Complete Threat Matrix ({summary.anomalies.length})</span>
+            <span>Open Complete Threat Matrix ({activeAnomalies.length})</span>
             <ArrowUpRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {/* Threat Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {summary.anomalies.slice(0, 6).map(anom => (
-            <div
-              key={anom.id}
-              className="p-4 rounded-2xl bg-[#080E20]/90 border border-slate-800/80 hover:border-cyan-500/40 transition-all shadow-md hover:shadow-[0_0_15px_rgba(0,229,255,0.15)] space-y-3 group"
-            >
-              <div className="flex items-center justify-between">
-                <span
-                  className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-md border tracking-wider ${
-                    anom.severity === 'CRITICAL'
-                      ? 'text-rose-300 bg-rose-950/80 border-rose-500/50 shadow-[0_0_8px_rgba(255,51,102,0.3)]'
-                      : anom.severity === 'HIGH'
-                      ? 'text-amber-300 bg-amber-950/80 border-amber-500/50'
-                      : 'text-cyan-300 bg-cyan-950/80 border-cyan-500/50'
-                  }`}
-                >
-                  {anom.severity} · {anom.compositeScore}/100
-                </span>
-
-                <span className="text-[10px] font-mono text-slate-400">
-                  {anom.packetRecord.timestamp.split('T')[1]?.substring(0, 8)}
-                </span>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-bold text-white font-heading group-hover:text-cyan-300 transition-colors">
-                  {anom.predictedAttack}
-                </h4>
-                <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5 font-light" title={anom.primaryReasons[0]}>
-                  {anom.primaryReasons[0]}
-                </p>
-              </div>
-
-              <div className="pt-2 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-[11px] font-mono">
-                <div>
-                  <span className="text-slate-400 text-[10px] block font-sans">Source Endpoint</span>
-                  <span className="text-white font-semibold truncate block">{anom.packetRecord.sourceIp}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 text-[10px] block font-sans">Target Endpoint</span>
-                  <span className="text-cyan-300 font-semibold truncate block">{anom.packetRecord.destIp}:{anom.packetRecord.destPort}</span>
-                </div>
-              </div>
-
-              <button
-                onClick={() => selectAlertForInvestigation(anom)}
-                className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-[#0B1530] hover:bg-cyan-950/60 border border-cyan-500/25 text-cyan-300 text-xs font-semibold transition-all"
+        {activeAnomalies.length === 0 ? (
+          <div className="py-10 text-center border border-dashed border-slate-800 rounded-2xl text-xs text-slate-400 font-light">
+            {isDashboardLoading
+              ? 'Loading threat intelligence feed from FastAPI...'
+              : 'No suspicious threat detections returned from the backend yet.'}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {activeAnomalies.slice(0, 6).map(anom => (
+              <div
+                key={anom.id}
+                className="p-4 rounded-2xl bg-[#080E20]/90 border border-slate-800/80 hover:border-cyan-500/40 transition-all shadow-md hover:shadow-[0_0_15px_rgba(0,229,255,0.15)] space-y-3 group"
               >
-                <SearchCode className="w-3.5 h-3.5" />
-                <span>Forensic Triage</span>
-              </button>
-            </div>
-          ))}
-        </div>
+                <div className="flex items-center justify-between">
+                  <span
+                    className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-md border tracking-wider ${
+                      anom.severity === 'CRITICAL'
+                        ? 'text-rose-300 bg-rose-950/80 border-rose-500/50 shadow-[0_0_8px_rgba(255,51,102,0.3)]'
+                        : anom.severity === 'HIGH'
+                        ? 'text-amber-300 bg-amber-950/80 border-amber-500/50'
+                        : 'text-cyan-300 bg-cyan-950/80 border-cyan-500/50'
+                    }`}
+                  >
+                    {anom.severity} · {anom.compositeScore}/100
+                  </span>
+
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {anom.packetRecord.timestamp.split('T')[1]?.substring(0, 8) || anom.packetRecord.timestamp}
+                  </span>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-bold text-white font-heading group-hover:text-cyan-300 transition-colors">
+                    {anom.predictedAttack}
+                  </h4>
+                  <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5 font-light" title={anom.primaryReasons[0]}>
+                    {anom.primaryReasons[0] || 'Statistical threshold breach'}
+                  </p>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-[11px] font-mono">
+                  <div>
+                    <span className="text-slate-400 text-[10px] block font-sans">Source Endpoint</span>
+                    <span className="text-white font-semibold truncate block">{anom.packetRecord.sourceIp}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[10px] block font-sans">Target Endpoint</span>
+                    <span className="text-cyan-300 font-semibold truncate block">{anom.packetRecord.destIp}:{anom.packetRecord.destPort}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => selectAlertForInvestigation(anom)}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-[#0B1530] hover:bg-cyan-950/60 border border-cyan-500/25 text-cyan-300 text-xs font-semibold transition-all"
+                >
+                  <SearchCode className="w-3.5 h-3.5" />
+                  <span>Forensic Triage</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 6. STATISTICAL INSIGHTS: Comprehensive Comparison Cards for All 6 Methods */}
@@ -586,7 +821,7 @@ export const DashboardPage: React.FC = () => {
             <div className="pt-2 border-t border-slate-800 flex justify-between items-center text-xs font-mono">
               <span className="text-slate-400">Flagged Breaches:</span>
               <span className="text-cyan-300 font-bold">
-                {summary.anomalies.filter(a => a.metrics.zScoreFlagged).length} flows
+                {zScoreBreaches} flows
               </span>
             </div>
           </div>
@@ -605,7 +840,7 @@ export const DashboardPage: React.FC = () => {
             <div className="pt-2 border-t border-slate-800 flex justify-between items-center text-xs font-mono">
               <span className="text-slate-400">Upper Fence Outliers:</span>
               <span className="text-cyan-300 font-bold">
-                {summary.anomalies.filter(a => a.metrics.iqrFlagged).length} flows
+                {iqrBreaches} flows
               </span>
             </div>
           </div>
@@ -624,7 +859,7 @@ export const DashboardPage: React.FC = () => {
             <div className="pt-2 border-t border-slate-800 flex justify-between items-center text-xs font-mono">
               <span className="text-slate-400">Surges Detected:</span>
               <span className="text-cyan-300 font-bold">
-                {summary.anomalies.filter(a => a.metrics.movingAvgFlagged).length} flows
+                {maBreaches} flows
               </span>
             </div>
           </div>
@@ -643,7 +878,9 @@ export const DashboardPage: React.FC = () => {
             <div className="pt-2 border-t border-slate-800 flex justify-between items-center text-xs font-mono">
               <span className="text-slate-400">Packet σ Spread:</span>
               <span className="text-cyan-300 font-bold">
-                {(summary.featureBaselines.packetCount?.stdDev || 420).toFixed(1)}
+                {summary.featureBaselines.packetCount
+                  ? summary.featureBaselines.packetCount.stdDev.toFixed(1)
+                  : '—'}
               </span>
             </div>
           </div>
@@ -662,7 +899,7 @@ export const DashboardPage: React.FC = () => {
             <div className="pt-2 border-t border-slate-800 flex justify-between items-center text-xs font-mono">
               <span className="text-slate-400">ML Isolated Nodes:</span>
               <span className="text-purple-300 font-bold">
-                {summary.anomalies.filter(a => a.metrics.isolationForestFlagged).length} flows
+                {iforestBreaches} flows
               </span>
             </div>
           </div>
@@ -681,7 +918,7 @@ export const DashboardPage: React.FC = () => {
             <div className="pt-2 border-t border-slate-800 flex justify-between items-center text-xs font-mono">
               <span className="text-slate-400">Target IP Entropy:</span>
               <span className="text-cyan-300 font-bold">
-                {(summary.anomalies[0]?.metrics.entropyValue || 2.4).toFixed(2)} bits
+                {entropyDisplay}
               </span>
             </div>
           </div>
